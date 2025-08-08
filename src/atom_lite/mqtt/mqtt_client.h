@@ -1,4 +1,4 @@
-/* #ifndef MQTT_CLIENT_H
+#ifndef MQTT_CLIENT_H
 #define MQTT_CLIENT_H
 
 
@@ -23,13 +23,17 @@ extern PubSubClient mqttClient;
 extern TinyGsm modem;
 extern TinyGsmClient tcpClient;
 
-// Hàm khởi tạo kết nối mạng và MQTT
-void mqttInit();
+// Task handle
+extern TaskHandle_t taskModemHandle;
+extern TaskHandle_t taskMQTTHandle;
+
+// Semaphore để đồng bộ giữa các task
+extern SemaphoreHandle_t xMQTTReadySemaphore;
+
+void mqttCallback(char *topic, byte *payload, unsigned int len);
 bool mqttConnect();
-void mqttLoop();
-bool mqttPublish(const char *topic, const char *payload);
-bool mqttIsConnected();
-void InitNetwork(void);
+void TaskModemInit(void *pvParameters);
+void TaskMQTTLoop(void *pvParameters);
+void mqttInit();
 
 #endif
- */

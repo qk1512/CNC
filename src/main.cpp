@@ -5,7 +5,7 @@
 
 #include "./atom_lite/sensor/soilMoisture.h"
 #include "./atom_lite/esp_now/atomNow.h"
-#include "./atom_lite/mqtt/tb.h"
+#include "./atom_lite/mqtt/mqtt_client.h"
 
 RS485Class RS485(Serial2, ATOM_DTU_RS485_RX, ATOM_DTU_RS485_TX, -1, -1);
 
@@ -45,17 +45,16 @@ void setup()
 
   //ModbusRTUClient.begin(9600);
   //ModbusRTUClient.setTimeout(2000);
-  SerialAT.begin(SIM7680_BAUDRATE, SERIAL_8N1, ATOM_DTU_SIM7680_RX, ATOM_DTU_SIM7680_TX);
+  //SerialAT.begin(SIM7680_BAUDRATE, SERIAL_8N1, ATOM_DTU_SIM7680_RX, ATOM_DTU_SIM7680_TX);
   delay(1000);
 
   
   //sensorSemaphore = xSemaphoreCreateMutex();
   
-  initSetUpThingBoard();
 
   //delay(1000);
   //initEspNow();
-
+  mqttInit();
   /* if (!ModbusRTUClient.begin(9600, SERIAL_8N1))
   {
     Serial.println("Failed to start Modbus RTU Client!");

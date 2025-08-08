@@ -1,5 +1,10 @@
-/* #include "mqtt_client.h"
+#include "mqtt_client.h"
 //#define TINY_GSM_MODEM_SIM7600
+uint32_t lastReconnectAttempt = 0;
+
+TaskHandle_t taskModemHandle = NULL;
+TaskHandle_t taskMQTTHandle = NULL;
+SemaphoreHandle_t xMQTTReadySemaphore;
 
 TinyGsm modem(SerialAT);
 TinyGsmClient tcpClient(modem);
@@ -11,79 +16,112 @@ const char gprsPass[] = "";
 
 void mqttCallback(char *topic, byte *payload, unsigned int len)
 {
-    Serial.println("Message arrived [" + String(topic) + "]: ");
-    Serial.write(payload, len);
-    Serial.println();
+    char info[len + 1];
+    memcpy(info, payload, len);
+    info[len] = '\0';
+    Serial.println("Message arrived[" + String(topic) + "]:" + info);
+}
+
+bool mqttConnect(void)
+{
+    Serial.println("Connecting to MQTT: " + String(MQTT_BROKER));
+    String mqttid = "MQTTID_" + String(random(65536));
+
+    if(!mqttClient.connect(mqttid.c_str(), ACCESS_TOKEN, "")){
+        Serial.println("MQTT CONNECT FAILED");
+        return false;
+    }
+
+    Serial.println("MQTT CONNECTED!");
+    mqttClient.setCallback(mqttCallback);
+    mqttClient.publish(MQTT_PUB_TOPIC, "CATM MQTT CLIENT ONLINE");
+    mqttClient.subscribe(MQTT_SUB_TOPIC);
+    return true;
+}
+
+void TaskModemInit(void *pvParameters)
+{
+    (void)pvParameters;
+
+    Serial.println(">> Initializing modem...");
+    while(!modem.init())
+    {
+        Serial.println("...retrying modem.init()");
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+
+    Serial.println(">> Waiting for network...");
+    while(!modem.waitForNetwork())
+    {
+        Serial.println("...waiting network");
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+
+    Serial.println(">> Connecting GPRS...");
+    while(!modem.gprsConnect(apn,gprsUser,gprsPass))
+    {
+        Serial.println("...retrying GPRS");
+        vTaskDelay(pdMS_TO_TICKS(3000));
+    }
+
+    Serial.println(">> GPRS connected.");
+
+    xSemaphoreGive(xMQTTReadySemaphore);
+    vTaskDelete(NULL);
+}
+
+void TaskMQTTLoop(void *pvParameters)
+{
+    (void)pvParameters;
+
+    // Đợi modem init xong
+    if (xSemaphoreTake(xMQTTReadySemaphore, portMAX_DELAY) == pdTRUE)
+    {
+        SerialMon.println(">> MQTT Task Starting...");
+    }
+
+    uint32_t timer = millis();
+    uint32_t lastReconnectAttempt = 0;
+
+    while (true)
+    {
+        if (!mqttClient.connected())
+        {
+            uint32_t now = millis();
+            if (now - lastReconnectAttempt > 3000)
+            {
+                lastReconnectAttempt = now;
+                mqttConnect();
+            }
+        }
+        else
+        {
+            mqttClient.loop();
+
+            if (millis() - timer >= UPLOAD_INTERVAL)
+            {
+                timer = millis();
+                mqttClient.publish(MQTT_PUB_TOPIC, "Hello from FreeRTOS + Semaphore");
+            }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 }
 
 void mqttInit()
 {
     SerialAT.begin(SIM7680_BAUDRATE, SERIAL_8N1, ATOM_DTU_SIM7680_RX, ATOM_DTU_SIM7680_TX);
-    modem.init();
 
-    InitNetwork();
-
-    mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
-    mqttClient.setCallback(mqttCallback);
-}
-
-bool mqttConnect()
-{
-    Serial.println("Connecting to MQTT...");
-    String clientId = "MQTTID_" + String(random(0xffff), HEX);
-
-    if (mqttClient.connect(clientId.c_str(), ACCESS_TOKEN, ""))
+    xMQTTReadySemaphore = xSemaphoreCreateBinary();
+    if (xMQTTReadySemaphore == NULL)
     {
-        Serial.println("MQTT connected");
-        //mqttClient.publish(MQTT_PUB_TOPIC, "CATM MQTT CLIENT ONLINE");
-        return true;
-    }
-    else
-    {
-        Serial.print("MQTT connection failed, rc=");
-        Serial.println(mqttClient.state());
-        return false;
-    }
-}
-
-void mqttLoop()
-{
-    mqttClient.loop();
-}
-
-bool mqttPublish(const char *topic, const char *payload)
-{
-    return mqttClient.publish(topic, payload);
-}
-
-bool mqttIsConnected()
-{
-    return mqttClient.connected();
-}
-
-void InitNetwork(void)
-{
-    unsigned long start = millis();
-    SerialMon.println("Initializing modem...");
-    while (!modem.init())
-    {
-        SerialMon.println("waiting...." + String((millis() - start) / 1000) +
-                          "s");
-    };
-
-    start = millis();
-    SerialMon.println("Waiting for network...");
-    while (!modem.waitForNetwork())
-    {
-        SerialMon.println("waiting...." + String((millis() - start) / 1000) +
-                          "s");
+        SerialMon.println("Failed to create semaphore!");
+        while (1)
+            ;
     }
 
-    SerialMon.println("Waiting for GPRS connect...");
-    if (!modem.gprsConnect(apn, gprsUser, gprsPass))
-    {
-        SerialMon.println("waiting...." + String((millis() - start) / 1000) +
-                          "s");
-    }
-    SerialMon.println("success");
-} */
+    xTaskCreatePinnedToCore(TaskModemInit, "TaskModemInit", 4096, NULL, 1, &taskModemHandle, 1);
+
+    xTaskCreatePinnedToCore(TaskMQTTLoop, "TaskMQTTLoop", 4096, NULL, 1, &taskMQTTHandle, 1);
+}
