@@ -29,7 +29,6 @@ extern SemaphoreHandle_t sensorSemaphore;
 
 bool SMisConnected();
 void SMReadData(ModbusRTUClientClass &modbus);
-//void SMInit(void);
 void SMPrintData(void);
 
 #endif

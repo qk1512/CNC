@@ -8,6 +8,7 @@
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <TinyGsmClient.h>
+#include "../sensor/soilMoisture.h"
 
 
 // Thông tin kết nối MQTT

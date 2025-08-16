@@ -7,5 +7,6 @@
 
 void initEspNow();
 void sendSensorDataTask(void *pvParameters);
+extern SemaphoreHandle_t xEspNowDoneSemaphore;
 
 #endif
